@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="clipboard-icon.ico" />
+
+    <title>Async Clipboard - Clipboard Change Demo</title>
+
+    <!-- import the webpage's stylesheet -->
+    <link rel="stylesheet" href="/style.css" />
+
+    <!-- import the webpage's javascript file -->
+    <script src="/script.js" defer></script>
+  </head>
+  <body>
+    <div id="main-content">
+      <table class="no-border">
+        <tr>
+          <th colspan="2">
+            <h1>Async Clipboard - Clipboard Change Demo</h1>
+          </th>
+        </tr>
+        <tr>
+          <td>
+            <h4>
+              Clipboard Permission State:
+              <span id="clipboard-permission-state">NA</span>
+            </h4>
+            <div class="highlighted-note">
+              <ol>
+                <li>
+                  The permission state will be updated when the page is
+                  reloaded.
+                </li>
+                <li>
+                  Permission state is only applicable when using Async Clipboard
+                  API.
+                </li>
+              </ol>
+            </div>
+          </td>
+          <td>
+            <h4>Session ID: <span id="session-id">NA</span></h4>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <fieldset>
+              <legend>Clipboard API</legend>
+              <select id="clpboard-api">
+                <option value="dataTransfer">Data Transfer</option>
+                <option value="asyncClipboard">Async Clipboard</option>
+              </select>
+            </fieldset>
+          </td>
+          <td>
+            <fieldset>
+              <legend>Data Storage</legend>
+              <div>
+                <select id="data-storage">
+                  <option value="localstorageAndClipboard">
+                    Local Storage and Clipboard
+                  </option>
+                  <option value="clipboard">Clipboard</option>
+                </select>
+              </div>
+            </fieldset>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <fieldset>
+              <legend>Copy Section</legend>
+              <div style="min-height: 120px">
+                <input type="checkbox" id="text-payload-chkbox" />
+                <label for="text-payload-chkbox">Plain Text</label>
+                <br />
+                <input type="checkbox" id="html-payload-chkbox" />
+                <label for="html-payload-chkbox">HTML</label>
+                <br />
+                <input type="checkbox" id="image-payload-chkbox" />
+                <label for="image-payload-chkbox">Image</label>
+                <br />
+                <input type="checkbox" id="sw-payload-chkbox" />
+                <label for="sw-payload-chkbox">Shadow Workbook</label>
+              </div>
+              <button id="copy-btn">Copy</button>
+            </fieldset>
+          </td>
+          <td>
+            <fieldset>
+              <legend>Paste Section</legend>
+              <div style="min-height: 120px">
+                <select id="paste-option">
+                  <option id="default-paste-option" value="default">
+                    Default
+                  </option>
+                  <option id="test-paste-option" value="pasteText">Text</option>
+                  <option id="html-paste-option" value="pasteHtml">HTML</option>
+                  <option id="img-paste-option" value="pasteImage">
+                    Image
+                  </option>
+                  <option id="sw-paste-option" value="pasteSw">
+                    Shadow Workbook
+                  </option>
+                </select>
+              </div>
+              <button id="paste-btn">Paste</button>
+            </fieldset>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <div id="progress-bar" style="visibility: hidden">
+              <img
+                src="loading-wheel.gif"
+                style="width: 24px; height: 24px"
+                alt="operation in progress"
+              />
+              <span>Operation in progress. Please wait...</span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <h3>Log Output</h3>
+            <textarea
+              disabled
+              id="log-output"
+              style="height: 200px; width: 100%"
+            ></textarea>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <h4>Pasted Content</h4>
+          </td>
+          <td>
+            <h4>
+              Last Copy/Paste Type:
+              <span>NA</span>
+            </h4>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2">
+            <div id="pasted-content">
+              <span>Content will appear here after paste</span>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>
