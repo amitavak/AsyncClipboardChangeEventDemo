@@ -24,7 +24,7 @@
         <tr>
           <td>
             <h4>
-              Clipboard Permission State:
+              Clipboard Permission State: <br />
               <span id="clipboard-permission-state">NA</span>
             </h4>
             <div class="highlighted-note">
@@ -41,14 +41,17 @@
             </div>
           </td>
           <td>
-            <h4>Session ID: <span id="session-id">NA</span></h4>
+            <h4>
+              Session ID: <br />
+              <span id="session-id">NA</span>
+            </h4>
           </td>
         </tr>
         <tr>
           <td>
             <fieldset>
               <legend>Clipboard API</legend>
-              <select id="clpboard-api">
+              <select id="clipboard-api">
                 <option value="dataTransfer">Data Transfer</option>
                 <option value="asyncClipboard">Async Clipboard</option>
               </select>
@@ -74,16 +77,16 @@
               <legend>Copy Section</legend>
               <div style="min-height: 120px">
                 <input type="checkbox" id="text-payload-chkbox" />
-                <label for="text-payload-chkbox">Plain Text</label>
+                <label for="text-payload-chkbox">Text</label>
                 <br />
                 <input type="checkbox" id="html-payload-chkbox" />
                 <label for="html-payload-chkbox">HTML</label>
                 <br />
-                <input type="checkbox" id="image-payload-chkbox" />
+                <input type="checkbox" id="img-payload-chkbox" />
                 <label for="image-payload-chkbox">Image</label>
                 <br />
-                <input type="checkbox" id="sw-payload-chkbox" />
-                <label for="sw-payload-chkbox">Shadow Workbook</label>
+                <input type="checkbox" id="wcf-payload-chkbox" />
+                <label for="wcf-payload-chkbox">Web Custom Format</label>
               </div>
               <button id="copy-btn">Copy</button>
             </fieldset>
@@ -101,8 +104,8 @@
                   <option id="img-paste-option" value="pasteImage">
                     Image
                   </option>
-                  <option id="sw-paste-option" value="pasteSw">
-                    Shadow Workbook
+                  <option id="sw-paste-option" value="pasteWCF">
+                    Web Custom Format
                   </option>
                 </select>
               </div>
