@@ -98,12 +98,25 @@ class App {
     });
   }
 
-  #performCopyOperation(isKeyboardEvent) {
+  async #performCopyOperation(isKeyboardEvent) {
+    const copyMetadata = {
+      sessionId: this.sessionId,
+      copyStatus: this.#copyStatusStarted,
+    };
     const dataFormats = {
       ["text/plain"]: "Retrieving data from server. Please wait...",
+      ["web data/copy-metadata"]: JSON.stringify(copyMetadata),
     };
 
-    this.#writeToClipboard(isKeyboardEvent, dataFormats);
+    try {
+      await this.#writeToClipboard(isKeyboardEvent, dataFormats);
+    } catch (err) {
+      this.#logMessage("Failed to write 'Retrieving data' to clipboard");
+    }
+
+    if (this.dataStorage === this.#localStorageAndClipboardStorage) {
+      await this.#writeMetadataToLocalStorage(copyMetadata);
+    }
   }
 
   #registerOnDemandCopyEventListener(writeDataToClipboard) {
@@ -128,7 +141,7 @@ class App {
     } else {
       if (this.clipboardApi === this.#dataTransferApi) {
         this.#registerOnDemandCopyEventListener((e) => {
-          this.#writeToClipboardFactory(e, dataFormats);
+          this.#writeToClipboardDataTransferApi(e, dataFormats);
         });
         const execCommandResult = document.execCommand("copy");
         this.#logMessage(`execCommand('copy') result: '${execCommandResult}'`);
@@ -147,14 +160,39 @@ class App {
   }
 
   #writeToClipboardDataTransferApi(e, dataFormats) {
+    const isSuccess = false;
+    const supportedDataFormats = ["text/plain", "text/html", "img/png"];
+
+    if (!dataFormats || Object.keys(dataFormats).length === 0) {
+      this.#logMessage(
+        "No data to write in clipboard using DataTransfer API. Clearing the clipboard"
+      );
+      e.clipboardData.clearData();
+      return;
+    }
+
     for (const [mimeType, copyPayload] of Object.entries(dataFormats)) {
+      if (!supportedDataFormats.includes(mimeType)) {
+        this.#logMessage(
+          `Data format '${mimeType}' is not supported in DataTransfer API`
+        );
+        continue;
+      }
+
       try {
         e.clipboardData.setData(mimeType, copyPayload);
+        isSuccess = true;
       } catch (err) {
         this.#logMessage(
-          `Failed to write data of type: '${mimeType}' in clipboard`
+          `Failed to write data of type: '${mimeType}' in clipboard using DataTransfer API`
         );
       }
+    }
+
+    if (isSuccess) {
+      this.#logMessage(
+        "Successfully wrote data in clipboard using DataTransfer"
+      );
     }
   }
 
@@ -164,12 +202,101 @@ class App {
       return;
     }
 
+    if (!dataFormats || Object.keys(dataFormats).length === 0) {
+      this.#logMessage(
+        "Async API - No data to write in clipboard. Clearing the clipboard"
+      );
+      try {
+        await navigator.clipboard.writeText("");
+      } catch (err) {
+        this.#logMessage("Failed to clear the clipboard using Async API");
+      }
+      return;
+    }
+
+    const sanitizedDataFormats = {};
+
+    for (const [mimeType, copyPayload] of Object.entries(dataFormats)) {
+      if (!copyPayload) {
+        continue;
+      }
+
+      let blobPayload = copyPayload;
+
+      // Check if the copyPayload is not of Blob type. Then convert it to Blob
+      if (!(copyPayload instanceof Blob)) {
+        blobPayload = new Blob([copyPayload], {
+          type: mimeType,
+        });
+      }
+
+      sanitizedDataFormats[mimeType] = blobPayload;
+    }
+
     try {
-      const clipboardItem = new ClipboardItem(dataFormats);
+      const clipboardItem = new ClipboardItem(sanitizedDataFormats);
       await navigator.clipboard.write([clipboardItem]);
+
+      this.#logMessage("Successfully wrote data in clipboard using Async API");
     } catch (err) {
       this.#logMessage("Failed to write data in clipboard using Async API");
     }
+  }
+
+  async #writeDataToLocalStorage(dataFormats) {
+    if (!dataFormats || Object.keys(dataFormats).length === 0) {
+      this.#logMessage(
+        "Local storage - No data to write in clipboard. Clearing the local storage"
+      );
+
+      localStorage.removeItem(this.#localstorageCopyPayloadKey);
+
+      return;
+    }
+
+    const sanitizedDataFormats = {};
+
+    for (const [mimeType, copyPayload] of Object.entries(dataFormats)) {
+      if (!copyPayload) {
+        continue;
+      }
+
+      let strPayload = copyPayload;
+
+      // Check if the copyPayload is of Blob type. then read read text from it
+      if (copyPayload instanceof Blob) {
+        if (mimeType === "image/png") {
+          strPayload = await this.#readBlobAsDataUrl(copyPayload);
+        } else {
+          strPayload = await copyPayload.text();
+        }
+      }
+
+      sanitizedDataFormats[mimeType] = strPayload;
+    }
+
+    localStorage.setItem(
+      this.#localstorageCopyPayloadKey,
+      JSON.stringify(sanitizedDataFormats)
+    );
+  }
+
+  async #writeMetadataToLocalStorage(copyMetadata) {
+    localStorage.setItem(
+      this.#localstorageCopyMetadataKey,
+      JSON.stringify(copyMetadata)
+    );
+  }
+
+  async #readBlobAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(reader.result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   #generateUUID() {
@@ -282,6 +409,14 @@ class App {
     return "wcf";
   }
 
+  get #copyStatusStarted() {
+    return "started";
+  }
+
+  get #copyStatusCompleted() {
+    return "completed";
+  }
+
   get #pastePasteOptionDefault() {
     return "default";
   }
@@ -296,6 +431,14 @@ class App {
 
   get #pastePasteOptionWebCustomFormat() {
     return "pasteWCF";
+  }
+
+  get #localstorageCopyPayloadKey() {
+    return "CopyPayloads";
+  }
+
+  get #localstorageCopyMetadataKey() {
+    return "CopyMetadata";
   }
 }
 
