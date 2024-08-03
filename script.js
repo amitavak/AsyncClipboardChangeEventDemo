@@ -2,6 +2,7 @@ class App {
   #sessionId = null;
   clipboardPermissionState = null;
   lastCopyPasteType = null;
+  copyMetadata = null;
 
   constructor() {}
 
@@ -66,6 +67,7 @@ class App {
   }
 
   #registerEventListeners() {
+    this.#registerLocalstorageChangeEventListener();
     this.#registerCopyEventListeners();
   }
 
@@ -98,6 +100,28 @@ class App {
     });
   }
 
+  #updateCopyMetadata(updatedCopyMetadata) {
+    this.copyMetadata = updatedCopyMetadata;
+    this.#onCopyMetadataChange();
+  }
+
+  #registerLocalstorageChangeEventListener() {
+    window.addEventListener("storage", (e) => {
+      if (
+        e.storageArea === localStorage &&
+        e.key === this.#localstorageCopyMetadataKey
+      ) {
+        this.#updateCopyMetadata(JSON.parse(e.newValue));
+      }
+    });
+  }
+
+  #onCopyMetadataChange() {
+    this.#logMessage("Copy metadata changed");
+
+    this.#enableDisablePasteOptions();
+  }
+
   async #performCopyOperation(isKeyboardEvent) {
     if (this.copyPayloads.length === 0) {
       this.#logMessage("Select at least one payload to copy");
@@ -114,14 +138,16 @@ class App {
     // Show loading indicator
     this.#showLoadingIndicator();
 
-    const copyMetadata = {
+    this.#updateCopyMetadata({
       sessionId: this.sessionId,
       copyStatus: this.#copyStatusStarted,
-    };
+    });
     let dataFormats = {
       ["text/plain"]: "Retrieving data from server. Please wait...",
-      ["web data/copy-metadata"]: JSON.stringify(copyMetadata),
+      ["web data/copy-metadata"]: JSON.stringify(this.copyMetadata),
     };
+
+    // Start: Write Initial payload ("Retrieving data") to clipboard and metadata to local storage
 
     try {
       await this.#writeToClipboard(isKeyboardEvent, dataFormats);
@@ -131,11 +157,13 @@ class App {
 
     if (this.dataStorage === this.#localStorageAndClipboardStorage) {
       try {
-        await this.#writeMetadataToLocalStorage(copyMetadata);
+        await this.#writeMetadataToLocalStorage(this.copyMetadata);
       } catch (err) {
         this.#logMessage("Failed to write metadata to local storage");
       }
     }
+
+    // End: Write Initial payload ("Retrieving data") to clipboard and metadata to local storage
 
     dataFormats = await this.#getDataFormatsBySelectedCopyPayloads();
 
@@ -153,10 +181,13 @@ class App {
       }
 
       try {
-        await this.#writeMetadataToLocalStorage({
-          ...copyMetadata,
+        const updatedCopyMetadata = {
+          ...this.copyMetadata,
           copyStatus: this.#copyStatusCompleted,
-        });
+        };
+        await this.#writeMetadataToLocalStorage(updatedCopyMetadata);
+
+        this.#updateCopyMetadata(updatedCopyMetadata);
       } catch (err) {
         this.#logMessage("Failed to write metadata to local storage");
       }
@@ -191,7 +222,13 @@ class App {
       if (this.copyPayloads.includes(this.#copyPayloadImg)) {
         const response = await fetch("img-payload.png");
         const imgPayload = await response.blob();
-        dataFormats["image/png"] = imgPayload;
+
+        if (this.clipboardApi === this.#dataTransferApi) {
+          const imgBase64 = await this.#readBlobAsDataUrl(imgPayload);
+          dataFormats["image/png"] = imgBase64;
+        } else {
+          dataFormats["image/png"] = imgPayload;
+        }
       }
 
       if (this.copyPayloads.includes(this.#copyPayloadWebCustomFormat)) {
@@ -252,7 +289,7 @@ class App {
 
   #writeToClipboardDataTransferApi(e, dataFormats) {
     let isSuccess = false;
-    const supportedDataFormats = ["text/plain", "text/html", "img/png"];
+    const supportedDataFormats = ["text/plain", "text/html", "image/png"];
 
     if (!dataFormats || Object.keys(dataFormats).length === 0) {
       this.#logMessage(
@@ -371,6 +408,40 @@ class App {
       this.#localstorageCopyMetadataKey,
       JSON.stringify(copyMetadata)
     );
+  }
+
+  #enableDisablePasteOptions() {
+    const pasteOptionTextElm = document.getElementById("text-paste-option");
+    const pasteOptionHtmlElm = document.getElementById("html-paste-option");
+    const pasteOptionImgElm = document.getElementById("img-paste-option");
+    const pasteOptionWebCustomFormatElm =
+      document.getElementById("wcf-paste-option");
+
+    if (!this.copyMetadata) {
+      pasteOptionTextElm.disabled = false;
+      pasteOptionHtmlElm.disabled = true;
+      pasteOptionImgElm.disabled = true;
+      pasteOptionWebCustomFormatElm.disabled = false;
+
+      return;
+    }
+
+    const copyPasteType =
+      this.copyMetadata.sessionId === this.sessionId
+        ? this.#copyPasteTypeSameSession
+        : this.#copyPasteTypeCrossSession;
+
+    if (copyPasteType === this.#copyPasteTypeSameSession) {
+      pasteOptionTextElm.disabled = false;
+      pasteOptionHtmlElm.disabled = false;
+      pasteOptionImgElm.disabled = false;
+      pasteOptionWebCustomFormatElm.disabled = false;
+    } else if (copyPasteType === this.#copyPasteTypeCrossSession) {
+      pasteOptionTextElm.disabled = false;
+      pasteOptionHtmlElm.disabled = false;
+      pasteOptionImgElm.disabled = true;
+      pasteOptionWebCustomFormatElm.disabled = true;
+    }
   }
 
   #createDummyHTMLPayload() {
@@ -582,6 +653,18 @@ class App {
 
   get #localstorageCopyMetadataKey() {
     return "CopyMetadata";
+  }
+
+  get #copyPasteTypeSameSession() {
+    return "same-session";
+  }
+
+  get #copyPasteTypeCrossSession() {
+    return "cross-session";
+  }
+
+  get #copyPasteTypeExternal() {
+    return "external";
   }
 }
 
