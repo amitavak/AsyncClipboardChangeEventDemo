@@ -99,11 +99,26 @@ class App {
   }
 
   async #performCopyOperation(isKeyboardEvent) {
+    if (this.copyPayloads.length === 0) {
+      this.#logMessage("Select at least one payload to copy");
+
+      try {
+        this.#writeToClipboard(isKeyboardEvent, null);
+        this.#writeDataToLocalStorage(null);
+        this.#writeMetadataToLocalStorage(null);
+      } catch (err) {}
+
+      return;
+    }
+
+    // Show loading indicator
+    this.#showLoadingIndicator();
+
     const copyMetadata = {
       sessionId: this.sessionId,
       copyStatus: this.#copyStatusStarted,
     };
-    const dataFormats = {
+    let dataFormats = {
       ["text/plain"]: "Retrieving data from server. Please wait...",
       ["web data/copy-metadata"]: JSON.stringify(copyMetadata),
     };
@@ -115,8 +130,84 @@ class App {
     }
 
     if (this.dataStorage === this.#localStorageAndClipboardStorage) {
-      await this.#writeMetadataToLocalStorage(copyMetadata);
+      try {
+        await this.#writeMetadataToLocalStorage(copyMetadata);
+      } catch (err) {
+        this.#logMessage("Failed to write metadata to local storage");
+      }
     }
+
+    dataFormats = await this.#getDataFormatsBySelectedCopyPayloads();
+
+    try {
+      await this.#writeToClipboard(false, dataFormats);
+    } catch (err) {
+      this.#logMessage("Failed to write copy payloads to clipboard");
+    }
+
+    if (this.dataStorage === this.#localStorageAndClipboardStorage) {
+      try {
+        await this.#writeDataToLocalStorage(dataFormats);
+      } catch (err) {
+        this.#logMessage("Failed to write copy payloads to local storage");
+      }
+
+      try {
+        await this.#writeMetadataToLocalStorage({
+          ...copyMetadata,
+          copyStatus: this.#copyStatusCompleted,
+        });
+      } catch (err) {
+        this.#logMessage("Failed to write metadata to local storage");
+      }
+    }
+
+    // Hide loading indicator
+    this.#hideLoadingIndicator();
+  }
+
+  async #getDataFormatsBySelectedCopyPayloads() {
+    if (this.copyPayloads.length === 0) {
+      return;
+    }
+
+    const dataFormats = {};
+
+    try {
+      if (this.copyPayloads.includes(this.#copyPayloadText)) {
+        const response = await fetch("text-payload.txt");
+        const textPayload = await response.text();
+        dataFormats["text/plain"] = textPayload;
+      }
+
+      if (this.copyPayloads.includes(this.#copyPayloadHtml)) {
+        const response = await fetch("html-payload.html");
+        const htmlPayload = await response.text();
+        dataFormats["text/html"] = htmlPayload;
+      } else {
+        dataFormats["text/html"] = this.#createDummyHTMLPayload();
+      }
+
+      if (this.copyPayloads.includes(this.#copyPayloadImg)) {
+        const response = await fetch("img-payload.png");
+        const imgPayload = await response.blob();
+        dataFormats["image/png"] = imgPayload;
+      }
+
+      if (this.copyPayloads.includes(this.#copyPayloadWebCustomFormat)) {
+        const response = await fetch("web-custom-format-payload.json");
+        const wcfPayload = await response.text();
+        dataFormats["web data/custom-format"] = wcfPayload;
+      }
+
+      if (this.addDelayToCopy) {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+      }
+    } catch (err) {
+      this.#logMessage("Failed to retrieve data from server");
+    }
+
+    return dataFormats;
   }
 
   #registerOnDemandCopyEventListener(writeDataToClipboard) {
@@ -160,14 +251,17 @@ class App {
   }
 
   #writeToClipboardDataTransferApi(e, dataFormats) {
-    const isSuccess = false;
+    let isSuccess = false;
     const supportedDataFormats = ["text/plain", "text/html", "img/png"];
 
     if (!dataFormats || Object.keys(dataFormats).length === 0) {
       this.#logMessage(
         "No data to write in clipboard using DataTransfer API. Clearing the clipboard"
       );
-      e.clipboardData.clearData();
+
+      // Clear the clipboard
+      e.clipboardData.setData("text/plain", "");
+
       return;
     }
 
@@ -254,6 +348,55 @@ class App {
       return;
     }
 
+    const sanitizedDataFormats = await this.#convertPayloadsToString(
+      dataFormats
+    );
+
+    localStorage.setItem(
+      this.#localstorageCopyPayloadKey,
+      JSON.stringify(sanitizedDataFormats)
+    );
+  }
+
+  async #writeMetadataToLocalStorage(copyMetadata) {
+    if (!copyMetadata || Object.keys(copyMetadata).length === 0) {
+      this.#logMessage(
+        "Local storage - No metadata to write in localstorage. Clearing the localstorage"
+      );
+
+      localStorage.removeItem(this.#localstorageCopyMetadataKey);
+    }
+
+    localStorage.setItem(
+      this.#localstorageCopyMetadataKey,
+      JSON.stringify(copyMetadata)
+    );
+  }
+
+  #createDummyHTMLPayload() {
+    const dummyHTMLPayload =
+      this.#wrapHTMLPayloadWithTimestamp("<p>No content</p>");
+
+    return dummyHTMLPayload;
+  }
+
+  #wrapHTMLPayloadWithTimestamp(htmlPayload) {
+    const divElm = document.createElement("div");
+    divElm.innerHTML = htmlPayload;
+
+    const timestamp = new Date().toISOString();
+
+    //Add timestamp to divElm as attribute
+    divElm.setAttribute("data-timestamp", timestamp);
+
+    return divElm.outerHTML;
+  }
+
+  async #convertPayloadsToString(dataFormats) {
+    if (!dataFormats || Object.keys(dataFormats).length === 0) {
+      return dataFormats;
+    }
+
     const sanitizedDataFormats = {};
 
     for (const [mimeType, copyPayload] of Object.entries(dataFormats)) {
@@ -275,17 +418,7 @@ class App {
       sanitizedDataFormats[mimeType] = strPayload;
     }
 
-    localStorage.setItem(
-      this.#localstorageCopyPayloadKey,
-      JSON.stringify(sanitizedDataFormats)
-    );
-  }
-
-  async #writeMetadataToLocalStorage(copyMetadata) {
-    localStorage.setItem(
-      this.#localstorageCopyMetadataKey,
-      JSON.stringify(copyMetadata)
-    );
+    return sanitizedDataFormats;
   }
 
   async #readBlobAsDataUrl(blob) {
@@ -315,6 +448,16 @@ class App {
 
     logOutputElm.value += `${message}\n---------\n`;
     logOutputElm.scrollTop = logOutputElm.scrollHeight;
+  }
+
+  #showLoadingIndicator() {
+    const loadingIndicatorElm = document.getElementById("progress-bar");
+    loadingIndicatorElm.style.visibility = "visible";
+  }
+
+  #hideLoadingIndicator() {
+    const loadingIndicatorElm = document.getElementById("progress-bar");
+    loadingIndicatorElm.style.visibility = "hidden";
   }
 
   get sessionId() {
