@@ -111,7 +111,11 @@ class App {
         e.storageArea === localStorage &&
         e.key === this.#localstorageCopyMetadataKey
       ) {
-        this.#updateCopyMetadata(JSON.parse(e.newValue));
+        const newCopyMetadata = JSON.parse(e.newValue);
+        this.#logMessage(
+          `Local storage change detected. NewValue: '${e.newValue}', OldValue: '${e.oldValue}'`
+        );
+        this.#updateCopyMetadata(newCopyMetadata);
       }
     });
   }
@@ -408,6 +412,8 @@ class App {
       this.#localstorageCopyMetadataKey,
       JSON.stringify(copyMetadata)
     );
+
+    this.#logMessage("Metadata written to local storage");
   }
 
   #enableDisablePasteOptions() {
@@ -440,7 +446,7 @@ class App {
       pasteOptionTextElm.disabled = false;
       pasteOptionHtmlElm.disabled = false;
       pasteOptionImgElm.disabled = true;
-      pasteOptionWebCustomFormatElm.disabled = true;
+      pasteOptionWebCustomFormatElm.disabled = false;
     }
   }
 
