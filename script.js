@@ -170,7 +170,7 @@ class App {
     }
 
     // Show loading indicator
-    this.#showLoadingIndicator();
+    this.#showCopyLoadingIndicator();
 
     this.#updateCopyMetadata({
       sessionId: this.sessionId,
@@ -234,11 +234,11 @@ class App {
     }
 
     // Hide loading indicator
-    this.#hideLoadingIndicator();
+    this.#hideCopyLoadingIndicator();
   }
 
   async #performPasteOperation(isKeyboardEvent) {
-    this.#showLoadingIndicator();
+    this.#showPasteLoadingIndicator();
 
     let clipboardDataFormats = null;
     let localStorageDataFormats = null;
@@ -251,7 +251,7 @@ class App {
 
     if (!clipboardDataFormats) {
       this.#logMessage("No data found in clipboard");
-      this.#hideLoadingIndicator();
+      this.#hidePasteLoadingIndicator();
       return;
     }
 
@@ -263,6 +263,42 @@ class App {
     }
 
     if (this.dataStorage === this.#localStorageAndClipboardStorage) {
+      const maxWaitTime = 10000;
+      const startTime = new Date().getTime();
+      while (
+        this.copyMetadata?.copyStatus === this.#copyStatusStarted &&
+        new Date().getTime() - startTime < maxWaitTime
+      ) {
+        this.#logMessage(
+          "Copy operation is in progress. Waiting for it to complete..."
+        );
+
+        // Wait for 1 second. Release the main thread
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      if (this.copyMetadata?.copyStatus === this.#copyStatusStarted) {
+        this.#logMessage(
+          "Copy operation is taking too long. Aborting paste operation"
+        );
+        this.#hidePasteLoadingIndicator();
+        return;
+      }
+
+      // Read from clipboard again to get the updated data
+      try {
+        clipboardDataFormats = await this.#readFromClipboard(false);
+      } catch (err) {
+        this.#logMessage("Failed to read data from clipboard");
+        clipboardDataFormats = null;
+      }
+
+      if (!clipboardDataFormats) {
+        this.#logMessage("No data found in clipboard");
+        this.#hidePasteLoadingIndicator();
+        return;
+      }
+
       localStorageDataFormats = this.#readDataFromLocalStorage();
     }
 
@@ -278,7 +314,7 @@ class App {
       }
 
       this.#updateCopyPasteType();
-      this.#hideLoadingIndicator();
+      this.#hidePasteLoadingIndicator();
       return;
     }
 
@@ -296,7 +332,7 @@ class App {
     }
 
     this.#updateCopyPasteType();
-    this.#hideLoadingIndicator();
+    this.#hidePasteLoadingIndicator();
   }
 
   #getCopyPasteTypeAndDataFormats(
@@ -397,7 +433,7 @@ class App {
         dataFormats: clipboardDataFormats,
       };
     } else {
-      if (this.copyMetadata.sessionId === this.sessionId) {
+      if (this.copyMetadata?.sessionId === this.sessionId) {
         return {
           copyPasteType: this.#copyPasteTypeSameSession,
           dataFormats: localStorageDataFormats,
@@ -768,6 +804,9 @@ class App {
 
           if (!execCommandResult) {
             document.removeEventListener("paste", onDemandPasteEventListener);
+            rejectClipboardDataFormats(
+              "Failed to read data from clipboard using DataTransfer API"
+            );
           }
         } else if (this.clipboardApi === this.#asyncClipboardApi) {
           const tempDataFormats = await this.#readFromClipboardAsyncApi();
@@ -963,13 +1002,25 @@ class App {
     logOutputElm.scrollTop = logOutputElm.scrollHeight;
   }
 
-  #showLoadingIndicator() {
-    const loadingIndicatorElm = document.getElementById("progress-bar");
-    loadingIndicatorElm.style.visibility = "visible";
+  #showCopyLoadingIndicator() {
+    const copyLoadingIndicatorElm =
+      document.getElementById("copy-progress-bar");
+    copyLoadingIndicatorElm.style.visibility = "visible";
   }
 
-  #hideLoadingIndicator() {
-    const loadingIndicatorElm = document.getElementById("progress-bar");
+  #hideCopyLoadingIndicator() {
+    const loadingIndicatorElm = document.getElementById("copy-progress-bar");
+    loadingIndicatorElm.style.visibility = "hidden";
+  }
+
+  #showPasteLoadingIndicator() {
+    const copyLoadingIndicatorElm =
+      document.getElementById("paste-progress-bar");
+    copyLoadingIndicatorElm.style.visibility = "visible";
+  }
+
+  #hidePasteLoadingIndicator() {
+    const loadingIndicatorElm = document.getElementById("paste-progress-bar");
     loadingIndicatorElm.style.visibility = "hidden";
   }
 
