@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- glitch: https://cdn.glitch.global/fe1ba503-299a-4c1f-866d-8baa9a39e802/clipboard-icon.ico?v=1722753755352 -->
     <link rel="icon" href="clipboard-icon.ico" />
 
     <title>Async Clipboard - Clipboard Change Demo</title>
@@ -107,16 +108,20 @@
                   <option id="default-paste-option" value="default">
                     Default
                   </option>
-                  <option id="text-paste-option" value="pasteText" disabled>
+                  <option id="text-paste-option" value="text/plain">
                     Text
                   </option>
-                  <option id="html-paste-option" value="pasteHtml" disabled>
+                  <option id="html-paste-option" value="text/html" disabled>
                     HTML
                   </option>
-                  <option id="img-paste-option" value="pasteImage" disabled>
+                  <option id="img-paste-option" value="image/png" disabled>
                     Image
                   </option>
-                  <option id="wcf-paste-option" value="pasteWCF" disabled>
+                  <option
+                    id="wcf-paste-option"
+                    value="web data/custom-format"
+                    disabled
+                  >
                     Web Custom Format
                   </option>
                 </select>
@@ -124,13 +129,33 @@
               <button id="paste-btn">Paste</button>
             </fieldset>
             <div class="highlighted-note">
-              <span>You may also use CTRL+V for paste</span>
+              <span>You may also use CTRL+V for paste</span><br />
+              <span
+                >Paste options are NOT based on available format in
+                clipboard/localstorage</span
+              >
+              <span
+                >Paste will fail if the selected paste option is not
+                available.</span
+              ><br />
+              <ol>
+                <li>Same Session: All paste options will be available</li>
+                <li>
+                  Cross Session: Only paste options other than "Image" will be
+                  available
+                </li>
+                <li>
+                  External: All paste options other them "Image" and HTML will
+                  be available
+                </li>
+              </ol>
             </div>
           </td>
         </tr>
         <tr>
           <td colspan="2">
             <div id="progress-bar" style="visibility: hidden">
+              <!-- glitch: https://cdn.glitch.global/fe1ba503-299a-4c1f-866d-8baa9a39e802/loading-wheel.gif?v=1722753864821 -->
               <img
                 src="loading-wheel.gif"
                 style="width: 24px; height: 24px"
@@ -157,7 +182,7 @@
           <td>
             <h4>
               Copy/Paste Type:
-              <span>NA</span>
+              <span id="copy-paste-type">NA</span>
             </h4>
           </td>
         </tr>

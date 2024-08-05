@@ -69,16 +69,17 @@ class App {
   #registerEventListeners() {
     this.#registerLocalstorageChangeEventListener();
     this.#registerCopyEventListeners();
+    this.#registerPasteEventListeners();
   }
 
   #registerCopyEventListeners() {
     document.addEventListener(
       "keydown",
       (e) => {
-        console.log("Keydown event detected!");
+        //console.log("Keydown event detected!");
 
         if (e.key === "c" && e.ctrlKey) {
-          console.log("Ctrl + C key combination detected!");
+          //console.log("Ctrl + C key combination detected!");
 
           this.#logMessage("*** Copy operation initiated (CTRL + C) ***");
 
@@ -93,10 +94,39 @@ class App {
       e.preventDefault();
 
       this.#logMessage(
-        "*** Copy operation initiated (copy button is clicked) ***"
+        "*** Copy operation initiated (copy button clicked) ***"
       );
 
       this.#performCopyOperation(false);
+    });
+  }
+
+  #registerPasteEventListeners() {
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        //console.log("Keydown event detected!");
+
+        if (e.key === "v" && e.ctrlKey) {
+          //console.log("Ctrl + V key combination detected!");
+
+          this.#logMessage("*** Paste operation initiated (CTRL + V) ***");
+
+          this.#performPasteOperation(true);
+        }
+      },
+      { capture: true }
+    );
+
+    const pasteBtnElm = document.getElementById("paste-btn");
+    pasteBtnElm.addEventListener("click", (e) => {
+      e.preventDefault();
+
+      this.#logMessage(
+        "*** Paste operation initiated (paste button clicked) ***"
+      );
+
+      this.#performPasteOperation(false);
     });
   }
 
@@ -171,8 +201,16 @@ class App {
 
     dataFormats = await this.#getDataFormatsBySelectedCopyPayloads();
 
+    const updatedCopyMetadata = {
+      ...this.copyMetadata,
+      copyStatus: this.#copyStatusCompleted,
+    };
+
     try {
-      await this.#writeToClipboard(false, dataFormats);
+      await this.#writeToClipboard(false, {
+        ...dataFormats,
+        ["web data/copy-metadata"]: JSON.stringify(updatedCopyMetadata),
+      });
     } catch (err) {
       this.#logMessage("Failed to write copy payloads to clipboard");
     }
@@ -184,21 +222,269 @@ class App {
         this.#logMessage("Failed to write copy payloads to local storage");
       }
 
-      try {
-        const updatedCopyMetadata = {
-          ...this.copyMetadata,
-          copyStatus: this.#copyStatusCompleted,
-        };
-        await this.#writeMetadataToLocalStorage(updatedCopyMetadata);
+      if (this.dataStorage === this.#localStorageAndClipboardStorage) {
+        try {
+          await this.#writeMetadataToLocalStorage(updatedCopyMetadata);
 
-        this.#updateCopyMetadata(updatedCopyMetadata);
-      } catch (err) {
-        this.#logMessage("Failed to write metadata to local storage");
+          this.#updateCopyMetadata(updatedCopyMetadata);
+        } catch (err) {
+          this.#logMessage("Failed to write metadata to local storage");
+        }
       }
     }
 
     // Hide loading indicator
     this.#hideLoadingIndicator();
+  }
+
+  async #performPasteOperation(isKeyboardEvent) {
+    this.#showLoadingIndicator();
+
+    let clipboardDataFormats = null;
+    let localStorageDataFormats = null;
+
+    try {
+      clipboardDataFormats = await this.#readFromClipboard(isKeyboardEvent);
+    } catch (err) {
+      this.#logMessage("Failed to read data from clipboard");
+    }
+
+    if (!clipboardDataFormats) {
+      this.#logMessage("No data found in clipboard");
+      this.#hideLoadingIndicator();
+      return;
+    }
+
+    const clipboardCopyMetadata =
+      clipboardDataFormats["web data/copy-metadata"];
+
+    if (clipboardCopyMetadata) {
+      this.#updateCopyMetadata(JSON.parse(clipboardCopyMetadata));
+    }
+
+    if (this.dataStorage === this.#localStorageAndClipboardStorage) {
+      localStorageDataFormats = this.#readDataFromLocalStorage();
+    }
+
+    if (!localStorageDataFormats) {
+      if (!!clipboardCopyMetadata) {
+        if (this.copyMetadata.sessionId === this.sessionId) {
+          this.#pasteSameSession(clipboardDataFormats);
+        } else {
+          this.#pasteCrossSession(clipboardDataFormats);
+        }
+      } else {
+        this.#pasteExternal(clipboardDataFormats);
+      }
+
+      this.#updateCopyPasteType();
+      this.#hideLoadingIndicator();
+      return;
+    }
+
+    const { copyPasteType, dataFormats } = this.#getCopyPasteTypeAndDataFormats(
+      clipboardDataFormats,
+      localStorageDataFormats
+    );
+
+    if (copyPasteType === this.#copyPasteTypeExternal) {
+      this.#pasteExternal(dataFormats);
+    } else if (copyPasteType === this.#copyPasteTypeSameSession) {
+      this.#pasteSameSession(dataFormats);
+    } else if (copyPasteType === this.#copyPasteTypeCrossSession) {
+      this.#pasteCrossSession(dataFormats);
+    }
+
+    this.#updateCopyPasteType();
+    this.#hideLoadingIndicator();
+  }
+
+  #getCopyPasteTypeAndDataFormats(
+    clipboardDataFormats,
+    localStorageDataFormats
+  ) {
+    const clipboardHTMLPayload = clipboardDataFormats["text/html"];
+
+    if (!clipboardHTMLPayload) {
+      if (clipboardDataFormats["web data/copy-metadata"]) {
+        if (this.copyMetadata.sessionId === this.sessionId) {
+          return {
+            copyPasteType: this.#copyPasteTypeSameSession,
+            dataFormats: clipboardDataFormats,
+          };
+        } else {
+          return {
+            copyPasteType: this.#copyPasteTypeCrossSession,
+            dataFormats: clipboardDataFormats,
+          };
+        }
+      }
+
+      return {
+        copyPasteType: this.#copyPasteTypeExternal,
+        dataFormats: clipboardDataFormats,
+      };
+    }
+
+    const localStorageHTMLPayload = localStorageDataFormats["text/html"];
+
+    if (!localStorageHTMLPayload) {
+      if (clipboardDataFormats["web data/copy-metadata"]) {
+        if (this.copyMetadata.sessionId === this.sessionId) {
+          return {
+            copyPasteType: this.#copyPasteTypeSameSession,
+            dataFormats: clipboardDataFormats,
+          };
+        } else {
+          return {
+            copyPasteType: this.#copyPasteTypeCrossSession,
+            dataFormats: clipboardDataFormats,
+          };
+        }
+      }
+
+      return {
+        copyPasteType: this.#copyPasteTypeExternal,
+        dataFormats: clipboardDataFormats,
+      };
+    }
+
+    const clipboardTimeStamp = new Date(
+      this.#getTimeStampFromHTMLPayload(clipboardHTMLPayload)
+    );
+    const localStorageTimeStamp = new Date(
+      this.#getTimeStampFromHTMLPayload(localStorageHTMLPayload)
+    );
+
+    if (clipboardTimeStamp === null || localStorageTimeStamp === null) {
+      if (clipboardDataFormats["web data/copy-metadata"]) {
+        if (this.copyMetadata.sessionId === this.sessionId) {
+          return {
+            copyPasteType: this.#copyPasteTypeSameSession,
+            dataFormats: clipboardDataFormats,
+          };
+        } else {
+          return {
+            copyPasteType: this.#copyPasteTypeCrossSession,
+            dataFormats: clipboardDataFormats,
+          };
+        }
+      }
+
+      return {
+        copyPasteType: this.#copyPasteTypeExternal,
+        dataFormats: clipboardDataFormats,
+      };
+    }
+
+    if (clipboardTimeStamp > localStorageTimeStamp) {
+      if (clipboardDataFormats["web data/copy-metadata"]) {
+        if (this.copyMetadata.sessionId === this.sessionId) {
+          return {
+            copyPasteType: this.#copyPasteTypeSameSession,
+            dataFormats: clipboardDataFormats,
+          };
+        } else {
+          return {
+            copyPasteType: this.#copyPasteTypeCrossSession,
+            dataFormats: clipboardDataFormats,
+          };
+        }
+      }
+
+      return {
+        copyPasteType: this.#copyPasteTypeExternal,
+        dataFormats: clipboardDataFormats,
+      };
+    } else {
+      if (this.copyMetadata.sessionId === this.sessionId) {
+        return {
+          copyPasteType: this.#copyPasteTypeSameSession,
+          dataFormats: localStorageDataFormats,
+        };
+      } else {
+        return {
+          copyPasteType: this.#copyPasteTypeCrossSession,
+          dataFormats: localStorageDataFormats,
+        };
+      }
+    }
+  }
+
+  #getTimeStampFromHTMLPayload(htmlPayload) {
+    if (!htmlPayload) {
+      return null;
+    }
+
+    const domParser = new DOMParser();
+
+    const htmlDoc = domParser.parseFromString(htmlPayload, "text/html");
+
+    // Find a div element with data-timestamp attribute
+    const divElm = htmlDoc.querySelector("div[data-timestamp]");
+
+    if (!divElm) {
+      return null;
+    }
+
+    return divElm.getAttribute("data-timestamp");
+  }
+
+  #pasteExternal(clipboardDataFormats) {
+    this.#logMessage("External paste");
+    this.copyMetadata = null;
+    this.lastCopyPasteType = this.#copyPasteTypeExternal;
+
+    let [mimeType, payload] = this.#getPasteOption(clipboardDataFormats);
+
+    this.#updatePasteContent([mimeType, payload]);
+  }
+
+  #pasteSameSession(dataFormats) {
+    this.#logMessage("Same session paste");
+    this.lastCopyPasteType = this.#copyPasteTypeSameSession;
+
+    let [mimeType, payload] = this.#getPasteOption(dataFormats);
+
+    this.#updatePasteContent([mimeType, payload]);
+  }
+
+  #pasteCrossSession(dataFormats) {
+    this.#logMessage("Cross session paste");
+    this.lastCopyPasteType = this.#copyPasteTypeCrossSession;
+
+    let [mimeType, payload] = this.#getPasteOption(dataFormats);
+
+    this.#updatePasteContent([mimeType, payload]);
+  }
+
+  #updatePasteContent([mimeType, payload]) {
+    const pastedContentElm = document.getElementById("pasted-content");
+    pastedContentElm.innerHTML = "";
+    const textAreaElm = document.createElement("textarea");
+    textAreaElm.disabled = true;
+    textAreaElm.style.width = "100%";
+    textAreaElm.style.height = "200px";
+    textAreaElm.value = payload;
+
+    pastedContentElm.appendChild(textAreaElm);
+  }
+
+  #getPasteOption(dataFormats) {
+    let selectedPasteOption = [];
+
+    if (this.pasteOption === this.#pasteOptionDefault) {
+      for (const pasteOption of this.#pasteOptionPriorities) {
+        if (dataFormats[pasteOption]) {
+          selectedPasteOption = [pasteOption, dataFormats[pasteOption]];
+          break;
+        }
+      }
+    } else {
+      selectedPasteOption = [this.pasteOption, dataFormats[this.pasteOption]];
+    }
+
+    return selectedPasteOption;
   }
 
   async #getDataFormatsBySelectedCopyPayloads() {
@@ -224,6 +510,7 @@ class App {
       }
 
       if (this.copyPayloads.includes(this.#copyPayloadImg)) {
+        // glitch link: https://cdn.glitch.global/fe1ba503-299a-4c1f-866d-8baa9a39e802/img-payload.png?v=1722753834160
         const response = await fetch("img-payload.png");
         const imgPayload = await response.blob();
 
@@ -263,6 +550,8 @@ class App {
     };
 
     document.addEventListener("copy", copyEventListener);
+
+    return copyEventListener;
   }
 
   async #writeToClipboard(isKeyboardEvent, dataFormats) {
@@ -272,11 +561,16 @@ class App {
       });
     } else {
       if (this.clipboardApi === this.#dataTransferApi) {
-        this.#registerOnDemandCopyEventListener((e) => {
-          this.#writeToClipboardDataTransferApi(e, dataFormats);
-        });
+        const onDemandCopyEventListener =
+          this.#registerOnDemandCopyEventListener((e) => {
+            this.#writeToClipboardDataTransferApi(e, dataFormats);
+          });
         const execCommandResult = document.execCommand("copy");
         this.#logMessage(`execCommand('copy') result: '${execCommandResult}'`);
+
+        if (!execCommandResult) {
+          document.removeEventListener("copy", onDemandCopyEventListener);
+        }
       } else if (this.clipboardApi === this.#asyncClipboardApi) {
         await this.#writeToClipboardAsyncApi(dataFormats);
       }
@@ -416,6 +710,145 @@ class App {
     this.#logMessage("Metadata written to local storage");
   }
 
+  #readDataFromLocalStorage() {
+    const dataFormats = localStorage.getItem(this.#localstorageCopyPayloadKey);
+
+    if (!dataFormats) {
+      this.#logMessage("No data found in local storage");
+      return {};
+    }
+
+    return JSON.parse(dataFormats);
+  }
+
+  #registerOnDemandPasteEventListener(readDataFromClipboard) {
+    const pasteEventListener = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.removeEventListener("paste", pasteEventListener);
+
+      this.#logMessage("Paste event detected");
+
+      readDataFromClipboard(e);
+    };
+
+    document.addEventListener("paste", pasteEventListener);
+
+    return pasteEventListener;
+  }
+
+  async #readFromClipboard(isKeyboardEvent) {
+    let resolveClipboardDataFormats = null;
+    let rejectClipboardDataFormats = null;
+
+    const clipboardDataFormatsPromise = new Promise((resolve, reject) => {
+      resolveClipboardDataFormats = resolve;
+      rejectClipboardDataFormats = reject;
+    });
+
+    try {
+      if (isKeyboardEvent) {
+        this.#registerOnDemandPasteEventListener(async (e) => {
+          const tempDataFormats = await this.#readFromClipboardFactory(e);
+          resolveClipboardDataFormats(tempDataFormats);
+        });
+      } else {
+        if (this.clipboardApi === this.#dataTransferApi) {
+          const onDemandPasteEventListener =
+            this.#registerOnDemandPasteEventListener((e) => {
+              const tempDataFormats = this.#readFromClipboardDataTransferApi(e);
+              resolveClipboardDataFormats(tempDataFormats);
+            });
+
+          const execCommandResult = document.execCommand("paste");
+
+          this.#logMessage(
+            `execCommand('paste') result: '${execCommandResult}'`
+          );
+
+          if (!execCommandResult) {
+            document.removeEventListener("paste", onDemandPasteEventListener);
+          }
+        } else if (this.clipboardApi === this.#asyncClipboardApi) {
+          const tempDataFormats = await this.#readFromClipboardAsyncApi();
+          resolveClipboardDataFormats(tempDataFormats);
+        } else {
+          rejectClipboardDataFormats("Invalid clipboard API");
+        }
+      }
+    } catch (err) {
+      rejectClipboardDataFormats(err);
+    }
+
+    return clipboardDataFormatsPromise;
+  }
+
+  #readFromClipboardDataTransferApi(e) {
+    const supportedDataFormats = ["text/plain", "text/html", "image/png"];
+
+    const dataFormats = {};
+
+    for (const mimeType of supportedDataFormats) {
+      try {
+        const copyPayload = e.clipboardData.getData(mimeType);
+
+        if (!copyPayload) {
+          continue;
+        }
+
+        dataFormats[mimeType] = copyPayload;
+      } catch (err) {
+        this.#logMessage(
+          `Failed to read data of type: '${mimeType}' from clipboard using DataTransfer API`
+        );
+      }
+    }
+
+    return dataFormats;
+  }
+
+  async #readFromClipboardFactory(e) {
+    if (this.clipboardApi === this.#dataTransferApi) {
+      return this.#readFromClipboardDataTransferApi(e);
+    } else if (this.clipboardApi === this.#asyncClipboardApi) {
+      const tempDataFormats = await this.#readFromClipboardAsyncApi();
+      return tempDataFormats;
+    }
+  }
+
+  async #readFromClipboardAsyncApi() {
+    if (!navigator.clipboard) {
+      this.#logMessage("Clipboard API is not supported");
+      return;
+    }
+
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      const dataFormats = {};
+
+      for (const clipboardItem of clipboardItems) {
+        for (const mimeType of clipboardItem.types) {
+          try {
+            const blob = await clipboardItem.getType(mimeType);
+            const blobContent =
+              mimeType === "image/png"
+                ? await this.#readBlobAsDataUrl(blob)
+                : await blob.text();
+            dataFormats[mimeType] = blobContent;
+          } catch (err) {
+            this.#logMessage(
+              `Failed to read data of type: '${mimeType}' from clipboard using Async API`
+            );
+          }
+        }
+      }
+
+      return dataFormats;
+    } catch (err) {
+      this.#logMessage("Failed to read data from clipboard using Async API");
+    }
+  }
+
   #enableDisablePasteOptions() {
     const pasteOptionTextElm = document.getElementById("text-paste-option");
     const pasteOptionHtmlElm = document.getElementById("html-paste-option");
@@ -521,9 +954,12 @@ class App {
   }
 
   #logMessage(message) {
+    const messageWithTimeStamp = `[${new Date().toISOString()}] ${message}`;
+    console.log(messageWithTimeStamp);
+
     const logOutputElm = document.getElementById("log-output");
 
-    logOutputElm.value += `${message}\n---------\n`;
+    logOutputElm.value += `${messageWithTimeStamp}\n---------\n`;
     logOutputElm.scrollTop = logOutputElm.scrollHeight;
   }
 
@@ -535,6 +971,18 @@ class App {
   #hideLoadingIndicator() {
     const loadingIndicatorElm = document.getElementById("progress-bar");
     loadingIndicatorElm.style.visibility = "hidden";
+  }
+
+  #updateCopyPasteType() {
+    const copyPasteTypeElm = document.getElementById("copy-paste-type");
+
+    if (this.lastCopyPasteType === this.#copyPasteTypeSameSession) {
+      copyPasteTypeElm.innerHTML = "Same Session";
+    } else if (this.lastCopyPasteType === this.#copyPasteTypeCrossSession) {
+      copyPasteTypeElm.innerHTML = "Cross Session";
+    } else if (this.lastCopyPasteType === this.#copyPasteTypeExternal) {
+      copyPasteTypeElm.innerHTML = "External";
+    }
   }
 
   get sessionId() {
@@ -593,6 +1041,15 @@ class App {
     return pasteOptionElm.value;
   }
 
+  get #pasteOptionPriorities() {
+    return [
+      this.#pasteOptionWebCustomFormat,
+      this.#pasteOptionHTML,
+      this.#pasteOptionText,
+      this.#pasteOptionImage,
+    ];
+  }
+
   get #notAvailable() {
     return "NA";
   }
@@ -637,20 +1094,24 @@ class App {
     return "completed";
   }
 
-  get #pastePasteOptionDefault() {
+  get #pasteOptionDefault() {
     return "default";
   }
 
-  get #pastePasteOptionHTML() {
-    return "pasteHtml";
+  get #pasteOptionText() {
+    return "text/plain";
   }
 
-  get #pastePasteOptionImage() {
-    return "pasteImage";
+  get #pasteOptionHTML() {
+    return "text/html";
   }
 
-  get #pastePasteOptionWebCustomFormat() {
-    return "pasteWCF";
+  get #pasteOptionImage() {
+    return "image/png";
+  }
+
+  get #pasteOptionWebCustomFormat() {
+    return "web data/custom-format";
   }
 
   get #localstorageCopyPayloadKey() {
