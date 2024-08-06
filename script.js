@@ -263,40 +263,42 @@ class App {
     }
 
     if (this.dataStorage === this.#localStorageAndClipboardStorage) {
-      const maxWaitTime = 10000;
-      const startTime = new Date().getTime();
-      while (
-        this.copyMetadata?.copyStatus === this.#copyStatusStarted &&
-        new Date().getTime() - startTime < maxWaitTime
-      ) {
-        this.#logMessage(
-          "Copy operation is in progress. Waiting for it to complete..."
-        );
-
-        // Wait for 1 second. Release the main thread
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
       if (this.copyMetadata?.copyStatus === this.#copyStatusStarted) {
-        this.#logMessage(
-          "Copy operation is taking too long. Aborting paste operation"
-        );
-        this.#hidePasteLoadingIndicator();
-        return;
-      }
+        const maxWaitTime = 10000;
+        const startTime = new Date().getTime();
+        while (
+          this.copyMetadata?.copyStatus === this.#copyStatusStarted &&
+          new Date().getTime() - startTime < maxWaitTime
+        ) {
+          this.#logMessage(
+            "Copy operation is in progress. Waiting for it to complete..."
+          );
 
-      // Read from clipboard again to get the updated data
-      try {
-        clipboardDataFormats = await this.#readFromClipboard(false);
-      } catch (err) {
-        this.#logMessage("Failed to read data from clipboard");
-        clipboardDataFormats = null;
-      }
+          // Wait for 1 second. Release the main thread
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
 
-      if (!clipboardDataFormats) {
-        this.#logMessage("No data found in clipboard");
-        this.#hidePasteLoadingIndicator();
-        return;
+        if (this.copyMetadata?.copyStatus === this.#copyStatusStarted) {
+          this.#logMessage(
+            "Copy operation is taking too long. Aborting paste operation"
+          );
+          this.#hidePasteLoadingIndicator();
+          return;
+        }
+
+        // Read from clipboard again to get the updated data
+        try {
+          clipboardDataFormats = await this.#readFromClipboard(false);
+        } catch (err) {
+          this.#logMessage("Failed to read data from clipboard");
+          clipboardDataFormats = null;
+        }
+
+        if (!clipboardDataFormats) {
+          this.#logMessage("No data found in clipboard");
+          this.#hidePasteLoadingIndicator();
+          return;
+        }
       }
 
       localStorageDataFormats = this.#readDataFromLocalStorage();
@@ -468,7 +470,7 @@ class App {
 
   #pasteExternal(clipboardDataFormats) {
     this.#logMessage("External paste");
-    this.copyMetadata = null;
+    this.#updateCopyMetadata(null);
     this.lastCopyPasteType = this.#copyPasteTypeExternal;
 
     let [mimeType, payload] = this.#getPasteOption(clipboardDataFormats);
